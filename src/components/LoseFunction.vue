@@ -1,15 +1,24 @@
 <template>
-  <div ref="div" style="width: 500px; height: 500px"></div>
-  <div>w: {{ w }}, b: {{ b }}</div>
+  <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+    <div style="display: flex">
+      <div ref="div" style="width: 500px; height: 500px"></div>
+      <div ref="div3D" style="width: 500px; height: 500px"></div>
+    </div>
 
-  <div>
-    <math-field>{{ latex }}</math-field>
+    <div>
+      <div>w: {{ w }}, b: {{ b }}</div>
+      <div>error: {{ error }}</div>
+      <div>
+        <math-field readonly>{{ latex }}</math-field>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watchEffect, onMounted, nextTick, watch, computed } from 'vue';
 import * as echarts from 'echarts';
+import 'echarts-gl';
 import points from '@/assets/data/points.json';
 import { MathfieldElement } from 'mathlive';
 import { debounce, round } from 'lodash-es';
@@ -17,9 +26,11 @@ import { debounce, round } from 'lodash-es';
 const mfe = new MathfieldElement();
 
 const div = ref<HTMLElement>();
+const div3D = ref<HTMLElement>();
 
 const isDark = ref(true);
-let myChart;
+let pointChart;
+let threeDChart;
 const symbolSize = 16;
 
 const w = ref(1);
@@ -27,6 +38,22 @@ const b = ref(0);
 
 const latex = computed(() => {
   return `{{\\color{Blue} f_{w,b}} (x)} = {\\color{Blue} ${w.value}} x + {\\color{Blue} ${b.value}}`;
+});
+
+const error = computed(() => {
+  const w1 = w.value;
+  const b1 = b.value;
+  let error = 0;
+  points.forEach((p) => {
+    const { x, y } = p;
+
+    const yhat = w1 * x + b1;
+
+    error += Math.pow(yhat - y, 2);
+  });
+
+  const ret = error / points.length;
+  return round(ret, 2);
 });
 
 const pointsData = points.map((p) => {
@@ -68,7 +95,7 @@ const lineSeries = {
   },
 };
 
-function getOption() {
+function getPointChartOption() {
   const option = {
     title: {
       // text: 'Try Dragging these Points',
@@ -125,20 +152,21 @@ function calcWB(p1, p2) {
 
 onMounted(() => {
   // 基于准备好的dom，初始化echarts实例
-  myChart = echarts.init(div.value);
+  pointChart = echarts.init(div.value);
+  threeDChart = echarts.init(div3D.value);
 
-  const option = getOption();
-  option.series.push(pointSeries);
-  option.series.push(lineSeries);
+  const pointChartOption = getPointChartOption();
+  pointChartOption.series.push(pointSeries);
+  pointChartOption.series.push(lineSeries);
 
-  myChart.setOption(option);
+  pointChart.setOption(pointChartOption);
 
-  const setGraphic = () => {
-    myChart.setOption({
+  const setPointGraphic = () => {
+    pointChart.setOption({
       graphic: lineData.value.map((item, dataIndex) => {
         return {
           type: 'circle',
-          position: myChart.convertToPixel('grid', item),
+          position: pointChart.convertToPixel('grid', item),
           shape: {
             cx: 0,
             cy: 0,
@@ -149,14 +177,14 @@ onMounted(() => {
           ondrag() {
             // @ts-ignore
             const pos = [this.x, this.y];
-            const p = myChart.convertFromPixel('grid', pos);
+            const p = pointChart.convertFromPixel('grid', pos);
 
             if (p[0] >= 26 || p[1] >= 26) {
               const p0 = p[0] >= 26 ? 25 : p[0];
               const p1 = p[1] >= 26 ? 25 : p[1];
 
               lineData.value[dataIndex] = [p0, p1];
-              setGraphic();
+              setPointGraphic();
               return;
             }
 
@@ -165,7 +193,7 @@ onMounted(() => {
               const p1 = p[1] <= -1 ? 0 : p[1];
 
               lineData.value[dataIndex] = [p0, p1];
-              setGraphic();
+              setPointGraphic();
               return;
             }
 
@@ -173,7 +201,7 @@ onMounted(() => {
 
             const series = [pointSeries, lineSeries];
 
-            myChart.setOption({
+            pointChart.setOption({
               series,
             });
           },
@@ -183,7 +211,59 @@ onMounted(() => {
     });
   };
 
-  setGraphic();
+  setPointGraphic();
+
+  const threeDChartOption = {
+    tooltip: {},
+    backgroundColor: '#fff',
+    visualMap: {
+      show: false,
+      dimension: 2,
+      min: -1,
+      max: 1,
+      inRange: {
+        color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026'],
+      },
+    },
+    xAxis3D: {
+      type: 'value',
+    },
+    yAxis3D: {
+      type: 'value',
+    },
+    zAxis3D: {
+      type: 'value',
+    },
+    grid3D: {
+      viewControl: {
+        // projection: 'orthographic'
+      },
+    },
+    series: [
+      {
+        type: 'surface',
+        wireframe: {
+          // show: false
+        },
+        equation: {
+          x: {
+            step: 0.05,
+          },
+          y: {
+            step: 0.05,
+          },
+          z: function (x, y) {
+            if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) {
+              return '-';
+            }
+            return Math.sin(x * Math.PI) * Math.sin(y * Math.PI);
+          },
+        },
+      },
+    ],
+  };
+
+  threeDChart.setOption(threeDChartOption);
 });
 </script>
 
